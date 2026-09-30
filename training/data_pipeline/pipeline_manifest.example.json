@@ -1,0 +1,83 @@
+{
+  "source_sampling_weights": [3, 1, 1, 1, 1, 7],
+  "stats": {
+    "franka": "/path/to/camera_frame_franka_only_q01q99.json",
+    "piper_agx": "/path/to/camera_frame_piper_agx_only_q01q99.json",
+    "six_source_reference": "/path/to/camera_frame_six_source_manip26_q01q99.json"
+  },
+  "prompt_manifest": "/path/to/six_source_prompts.jsonl",
+  "prompt_inputs": {
+    "ordered_variants": "/path/to/ordered_color_prompt_variants.jsonl",
+    "agilex7000_variants": "/path/to/agilex7000_prompt_variants.jsonl"
+  },
+  "index_preparation": {
+    "latent_cache_root": "/path/to/mobile_vae_latent_cache",
+    "sources": {
+      "agx_cup_tray_mobile_rot6d_vlash_se2_h48_phase_split_v3": {
+        "old_root": "/path/to/cup_tray_before_camera_frame",
+        "camera_root": "/path/to/cup_tray_camera_frame",
+        "window_index": "/path/to/cup_tray_upstream_h32.parquet",
+        "phase_index": "/path/to/cup_tray_upstream_phase.parquet",
+        "branches": ["manip", "nav"],
+        "base_remap_root": null
+      },
+      "agx_move_white_box_mobile_rot6d_vlash_se2_h48_phase_split_v2": {
+        "old_root": "/path/to/move_white_box_before_camera_frame",
+        "camera_root": "/path/to/move_white_box_camera_frame",
+        "window_index": "/path/to/move_white_box_upstream_h32.parquet",
+        "phase_index": "/path/to/move_white_box_upstream_phase.parquet",
+        "branches": ["manip", "nav"],
+        "base_remap_root": "/path/to/move_white_box_base_latent_remap"
+      },
+      "agx_color_blocks_mobile_rot6d_vlash_se2_h48_phase_split_v3": {
+        "old_root": "/path/to/color_blocks_before_camera_frame",
+        "camera_root": "/path/to/color_blocks_camera_frame",
+        "window_index": "/path/to/color_blocks_upstream_h32.parquet",
+        "phase_index": "/path/to/color_blocks_upstream_phase.parquet",
+        "branches": ["manip"],
+        "base_remap_root": null
+      }
+    }
+  },
+  "sources": [
+    {
+      "name": "franka_cup_pyramid",
+      "dataset_root": "/path/to/franka_camera_frame",
+      "window_index": "/path/to/franka/window_index_h32_stride4.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/franka_cup_pyramid_base_state_action_v1"
+    },
+    {
+      "name": "agx_cup_tray",
+      "dataset_root": "/path/to/agx_cup_tray_camera_frame",
+      "window_index": "/path/to/agx_cup_tray/window_index_h32.parquet",
+      "phase_index": "/path/to/agx_cup_tray/phase_branch_index_h32.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/agx_cup_tray"
+    },
+    {
+      "name": "agx_move_white_box",
+      "dataset_root": "/path/to/agx_move_white_box_camera_frame",
+      "window_index": "/path/to/agx_move_white_box/window_index_h32.parquet",
+      "phase_index": "/path/to/agx_move_white_box/phase_branch_index_h32.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/agx_move_white_box"
+    },
+    {
+      "name": "agx_color_blocks",
+      "dataset_root": "/path/to/agx_color_blocks_camera_frame",
+      "window_index": "/path/to/agx_color_blocks/window_index_h32.parquet",
+      "phase_index": "/path/to/agx_color_blocks/phase_branch_index_h32.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/agx_color_blocks"
+    },
+    {
+      "name": "agx_ordered_color_blocks",
+      "dataset_root": "/path/to/agx_ordered_color_blocks_camera_frame",
+      "window_index": "/path/to/agx_ordered_color_blocks/window_index.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/agx_ordered_color_blocks"
+    },
+    {
+      "name": "agilex7000_front30",
+      "dataset_root": "/path/to/agilex7000_front30_camera_frame",
+      "window_index": "/path/to/agilex7000_front30/window_index_h32_stride4_filtered.parquet",
+      "eef_sidecar": "/path/to/eef_sidecars/agilex7000_front30"
+    }
+  ]
+}
