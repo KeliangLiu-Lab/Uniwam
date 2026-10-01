@@ -58,6 +58,9 @@ restore H32 and phase indexes, latent row remaps, split stats, and prompt caches
 Fill every path in `training/data_pipeline/pipeline_manifest.example.json`.
 The stats and prompt builders require a manifest and fail closed when inputs are
 absent.
+Run `bash training/scripts/bootstrap_reference_artifacts.sh` once after cloning;
+it restores the exact parent and retrain index/remap files and checks all 34
+file hashes before training.
 
 For the completed `retrain` recipe, the three mobile camera-frame datasets can
 be rebuilt from the action-current LeRobot sources with
@@ -83,6 +86,7 @@ environment where they are supplied.
 
 ```bash
 cd training
+./scripts/bootstrap_reference_artifacts.sh
 export PYTHONPATH="$PWD/src:$PWD"
 export UNIWAM_TRAINING_ROOT="$PWD"
 python scripts/train.py --cfg job --config-name train \

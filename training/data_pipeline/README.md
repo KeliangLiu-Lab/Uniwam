@@ -19,8 +19,9 @@ datasets, videos, VAE tensors, or text encoder caches.
    training.
 
 The exact six-source parent indexes and latent row remaps are included under
-`training/reference/`. They are small reference artifacts; the episode tables
-and latent tensors remain external.
+`training/reference_archives/` as hashed archive parts. Run
+`training/scripts/bootstrap_reference_artifacts.sh` to restore them under
+`training/reference/`. The episode tables and latent tensors remain external.
 
 ## Rebuild the renamed retrain sources
 
