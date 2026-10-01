@@ -2,10 +2,10 @@ profile_name: uniwam_camera_frame_h32_embodiment_stats_async
 project_root: ${oc.env:UNIWAM_TRAINING_ROOT}
 task: ${oc.env:UNIWAM_CLOUD_TASK,uniwam_camera_frame_six_source_manip26_embodiment_stats_200k}
 # Parent six-source checkpoint; source 1 uses the paired mobile contract.
-paired_source_index: 1
+paired_source_index: ${oc.env:UNIWAM_CLOUD_SOURCE_INDEX,1}
 checkpoint: null
 checkpoint_min_bytes: 12000000000
-dataset_stats: ${oc.env:UNIWAM_TRAINING_ROOT}/data_indices/camera_frame_piper_agx_only_q01q99.json
+dataset_stats: ${oc.env:UNIWAM_CLOUD_STATS,${oc.env:UNIWAM_TRAINING_ROOT}/data_indices/camera_frame_piper_agx_only_q01q99.json}
 
 device: cuda:0
 mixed_precision: bf16
@@ -51,7 +51,7 @@ contract:
   rope_offset: 0
   dynamic_loss_weighting: false
   async_enabled: true
-  manip_aux_loss_weight: 1.0
+  manip_aux_loss_weight: ${oc.env:UNIWAM_CLOUD_AUX_WEIGHT,1.0}
 
 nav_planner:
   longitudinal_gain: 1.5

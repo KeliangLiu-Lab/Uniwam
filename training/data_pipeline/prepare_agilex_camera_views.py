@@ -55,7 +55,10 @@ def fixed_list(values: np.ndarray, width: int) -> pa.Array:
     return pa.FixedSizeListArray.from_arrays(flat, width)
 
 
-def build_source(source: Path, output: Path, left: np.ndarray, right: np.ndarray) -> None:
+def build_source(
+    source: Path, output: Path, left: np.ndarray, right: np.ndarray, *,
+    convert_state=camera_state, rotation_serialization: str | None = None,
+) -> None:
     staging = output.with_name(output.name + ".building")
     if output.exists() or staging.exists():
         raise FileExistsError(f"Refusing to overwrite {output} or {staging}")
@@ -78,6 +81,8 @@ def build_source(source: Path, output: Path, left: np.ndarray, right: np.ndarray
         "camera_from_left_base": left.tolist(),
         "camera_from_right_base": right.tolist(),
     }
+    if rotation_serialization is not None:
+        info["fastwam_camera_frame_conversion"]["rotation_serialization"] = rotation_serialization
     (staging / "meta/info.json").write_text(json.dumps(info, indent=2) + "\n")
 
     state_values = []
@@ -91,8 +96,8 @@ def build_source(source: Path, output: Path, left: np.ndarray, right: np.ndarray
         raw_action = np.asarray(table["action.manip"].to_pylist(), dtype=np.float32)
         if raw_state.shape != (table.num_rows, 23) or raw_action.shape != (table.num_rows, 20):
             raise ValueError(f"Expected state [T,23] and action [T,20] in {source_path}")
-        state_camera = camera_state(raw_state[:, 3:], left, right)
-        action_camera = camera_state(raw_action, left, right)
+        state_camera = convert_state(raw_state[:, 3:], left, right)
+        action_camera = convert_state(raw_action, left, right)
         state_values.append(state_camera)
         action_values.append(action_camera)
         table = table.append_column("observation.state.camera_dual_arm", fixed_list(state_camera, 20))

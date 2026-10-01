@@ -9,11 +9,12 @@ PREFETCH_FACTOR="${PREFETCH_FACTOR:-4}"
 CHECKPOINT_EPISODE_INTERVAL="${CHECKPOINT_EPISODE_INTERVAL:-8}"
 MASTER_PORT="${MASTER_PORT:-29871}"
 LOG_DIR="${PROJECT_ROOT}/logs/precompute"
-RUN_ID="${RUN_ID:-true_h32_vae_gpu228_8gpu_$(date +%Y%m%d_%H%M%S)}"
+RUN_ID="${RUN_ID:-true_h32_vae_8gpu_$(date +%Y%m%d_%H%M%S)}"
+TASK="${TASK:-uniwam_camera_frame_six_source_manip26_embodiment_stats_200k}"
 
 cd "${PROJECT_ROOT}"
 mkdir -p "${OUTPUT_ROOT}" "${LOG_DIR}"
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export DIFFSYNTH_MODEL_BASE_PATH="${DIFFSYNTH_MODEL_BASE_PATH:?Set DIFFSYNTH_MODEL_BASE_PATH to the external Wan/ActionDiT checkpoints}"
 export DIFFSYNTH_SKIP_DOWNLOAD=true
@@ -22,7 +23,7 @@ export FASTWAM_TORCHCODEC_DECODER_CACHE_SIZE="${FASTWAM_TORCHCODEC_DECODER_CACHE
 
 torchrun --standalone --nproc_per_node=8 --master_port="${MASTER_PORT}" \
   data_pipeline/precompute_true_h32_vae_latents.py \
-  --task uniwam_camera_frame_six_source_manip26_embodiment_stats_200k \
+  --task "${TASK}" \
   --output-root "${OUTPUT_ROOT}" \
   --workers "${WORKERS}" \
   --batch-size "${BATCH_SIZE}" \

@@ -93,7 +93,7 @@ def load_runtime_cfg(
 def paired_data_cfg(cfg: Any, source_index: int = 0, required_branches: str = "both") -> Any:
     datasets = cfg.data.train.get("datasets", None)
     if datasets is None:
-        raise ValueError("rot6D deployment requires a mixed four-source data config.")
+        raise ValueError("rot6D deployment requires a mixed-stream data config.")
     if source_index < 0 or source_index >= len(datasets):
         raise IndexError(f"paired_source_index={source_index} is outside source count {len(datasets)}.")
     source = datasets[source_index]
@@ -149,18 +149,19 @@ def _stats_contract(path: Path) -> dict[str, Any]:
     return {key: payload[key] for key in ("state", "action", "contract")}
 
 
-def _expected_stats_contract(train_path: Path, project_root: Path, source_index: int) -> dict[str, Any]:
+def _expected_stats_contract(train_path: Path, project_root: Path) -> dict[str, Any]:
     if train_path.is_file():
         return _stats_contract(train_path)
-    group = "franka" if source_index == 0 else "piper_agx"
-    name = (
-        "camera_frame_franka_only_q01q99.json"
-        if group == "franka" else "camera_frame_piper_agx_only_q01q99.json"
-    )
-    if train_path.name != name:
+    known = {
+        "camera_frame_franka_only_q01q99.json": "franka",
+        "camera_frame_piper_agx_only_q01q99.json": "piper_agx",
+    }
+    group = known.get(train_path.name)
+    if group is None:
         raise FileNotFoundError(
             f"Checkpoint stats are unavailable and are not the known parent artifact: {train_path}"
         )
+    name = train_path.name
     reference = project_root / "data_pipeline/parent_200k_artifact_reference.json"
     if not reference.is_file():
         raise FileNotFoundError(f"Parent stats reference is missing: {reference}")
@@ -381,6 +382,11 @@ def validate_checkpoint_contract(
         "norm_default_mode": "q01/q99",
         "use_stepwise_action_norm": False,
         "context_len": 128,
+        "state_column": "observation.state.camera_dual_arm",
+        "manip_action_column": "action.manip.camera_dual_arm",
+        "action_alignment": "current",
+        "manip_action_source": "recorded_action",
+        "robot_manip_action_dim": EXPECTED_ROBOT_MANIP_ACTION_DIM,
     }
     if required_branches != "manip":
         required_data.update({
@@ -390,13 +396,12 @@ def validate_checkpoint_contract(
             "robot_nav_action_dim": EXPECTED_ROBOT_NAV_ACTION_DIM,
         })
     else:
-        # Manip-only inference can still use a paired source (for example the
-        # Piper source in the embodiment-stats recipe). Preserve that source's
-        # exact camera contract; ordinary color source 3 and ordered color
-        # source 4 both use the three-camera fastwam mosaic.
-        required_data["concat_multi_camera"] = (
-            "fastwam_384x320" if source_index in (3, 4) else EXPECTED_CONCAT_MODE
-        )
+        # The source's camera contract, not its position in a six-source list,
+        # determines the inference mosaic for customer single-source SFTs.
+        train_concat = str(train_data.get("concat_multi_camera", ""))
+        if train_concat not in {"fastwam_384x320", EXPECTED_CONCAT_MODE}:
+            mismatches.append(f"checkpoint.data.concat_multi_camera: unsupported {train_concat!r}")
+        required_data["concat_multi_camera"] = train_concat
     for key, expected in required_data.items():
         train_value = resolved_value(train_data, key)
         runtime_value = resolved_value(runtime_data, key)
@@ -424,7 +429,16 @@ def validate_checkpoint_contract(
         _check_equal(mismatches, f"runtime.data.{key}", runtime_value, expected)
         _check_equal(mismatches, f"runtime-vs-checkpoint.data.{key}", runtime_value, train_value)
 
-    if runtime_data.get("manip_eef_xy_index_root", None) in (None, "", "null"):
+    train_prefix = str(train_data.get("instruction_prefix", "") or "").strip()
+    if not train_prefix:
+        train_prefix = str((train_data.get("instruction_prefix_by_branch") or {}).get("manip", "") or "").strip()
+    runtime_prefix = str(runtime_data.get("instruction_prefix", "") or "").strip()
+    if not runtime_prefix:
+        runtime_prefix = str((runtime_data.get("instruction_prefix_by_branch") or {}).get("manip", "") or "").strip()
+    deploy_prefix = str(deploy_cfg.get("instruction_prefix_by_mode", {}).get("manip_only", "") or "").strip()
+    _check_equal(mismatches, "runtime-vs-checkpoint.manip_instruction_prefix", runtime_prefix, train_prefix)
+    _check_equal(mismatches, "deployment-vs-checkpoint.manip_instruction_prefix", deploy_prefix, train_prefix)
+    if contract.manip_aux_loss_weight > 0 and runtime_data.get("manip_eef_xy_index_root", None) in (None, "", "null"):
         mismatches.append("runtime.data.manip_eef_xy_index_root: required for manip26")
 
     expected_stats = Path(str(train_data.pretrained_norm_stats)).resolve()
@@ -432,7 +446,7 @@ def validate_checkpoint_contract(
     deploy_stats = Path(str(deploy_cfg.dataset_stats)).resolve()
     _check_equal(mismatches, "runtime-vs-deployment.dataset_stats", runtime_stats, deploy_stats)
     expected_contract = _expected_stats_contract(
-        expected_stats, Path(str(deploy_cfg.project_root)).resolve(), source_index
+        expected_stats, Path(str(deploy_cfg.project_root)).resolve()
     )
     for label, path in (("runtime.data.pretrained_norm_stats", runtime_stats), ("dataset_stats", deploy_stats)):
         if not path.is_file():

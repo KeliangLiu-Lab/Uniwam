@@ -17,6 +17,11 @@ legacy compatibility layer. `training/configs` contains Hydra contracts,
 contains parent indexes and latent row remaps, and `deployment` contains cloud and
 Piper edge code.
 
+For a customer-owned Piper/AgileX dataset and task prompt, follow
+[Customer Piper Fine-Tuning](docs/CUSTOMER_PIPER_FINETUNING.md). This is the
+supported adaptation path; the six-source recipes below document the original
+training contract and are not prerequisites for customer data.
+
 ## Environment
 
 Use Python 3.10+, PyTorch, Hydra, PyArrow, NumPy, and the dependencies required by
@@ -126,7 +131,10 @@ import fastwam  # legacy compatibility path
 The release is checked with Python compilation, shell syntax checks, Hydra
 composition, six-source dataset construction, prompt-prefix consistency, stats
 reproduction, H32 index fixtures, archive checksums, and extracted namespace
-imports. A model checkpoint is intentionally not included.
+imports. The customer path also has a raw-to-camera-to-H32 fixture, masked
+single-source action sample check, and train/cloud contract checks. Physical
+robot execution is not covered by automated tests. A model checkpoint is
+intentionally not included.
 
 ## License
 

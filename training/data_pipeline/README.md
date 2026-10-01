@@ -4,6 +4,13 @@ This directory contains the reproducible processing stages from prepared
 LeRobot episode tables to the six-source model inputs. It does not embed raw
 datasets, videos, VAE tensors, or text encoder caches.
 
+For a new Piper/AgileX customer task, use `prepare_customer_piper_views.py`
+and `prepare_customer_piper_h32.py`, then follow
+`docs/CUSTOMER_PIPER_FINETUNING.md`. The historical
+`prepare_agilex_camera_views.py` reproduces three older mobile sources but
+uses their historical Rot6D serialization; it must not be used for new
+customer training data.
+
 ## Stages
 
 1. Convert legacy state/action representations with the Rot6D and SE(2)
