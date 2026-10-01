@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,7 +25,7 @@ sys.path[:0] = [str(TRAINING / "data_pipeline"), str(TRAINING / "src"),
 
 from prepare_customer_piper_h32 import prepare  # noqa: E402
 from prepare_customer_piper_views import camera_state  # noqa: E402
-from prepare_agilex_camera_views import build_source, camera_state as legacy_camera_state  # noqa: E402
+from prepare_agilex_camera_views import camera_state as legacy_camera_state  # noqa: E402
 from make_customer_piper_robot_config import generate  # noqa: E402
 from uniwam_piper_cloud.policy_rot6d import (  # noqa: E402
     AsyncPrefixContract, load_runtime_cfg, validate_checkpoint_contract,
@@ -51,7 +52,7 @@ class CustomerPiperTest(unittest.TestCase):
         pq.write_table(pa.table({
             "episode_index": [0] * 40,
             "frame_index": list(range(40)),
-            "observation.state": pa.array([[0.0, 0.0, 0.0] + pose for pose in raw], type=pa.list_(pa.float32(), 23)),
+            "observation.state": pa.array(raw, type=pa.list_(pa.float32(), 20)),
             "action.manip": pa.array(raw, type=pa.list_(pa.float32(), 20)),
             "observation.state.camera_dual_arm": pa.array(_arm(40), type=pa.list_(pa.float32(), 20)),
             "action.manip.camera_dual_arm": pa.array(_arm(40), type=pa.list_(pa.float32(), 20)),
@@ -73,15 +74,45 @@ class CustomerPiperTest(unittest.TestCase):
             "fastwam_camera_frame_conversion": {
                 "camera_from_left_base": left, "camera_from_right_base": right,
                 "rotation_serialization": "row_major_rot6d_v1",
+                "input_frame": "base",
+                "input_state_dim": 20,
             },
         }))
         (self.data / "meta/episodes.jsonl").write_text(json.dumps({"episode_index": 0, "length": 40}) + "\n")
         (self.data / "meta/tasks.jsonl").write_text(json.dumps({"task_index": 0, "task": "Move the red block."}) + "\n")
 
+    def _raw_source(self, name: str, state: list[list[float]], action: list[list[float]]) -> Path:
+        raw = self.root / name
+        (raw / "meta").mkdir(parents=True)
+        (raw / "videos").mkdir()
+        for filename in ("tasks.jsonl", "episodes.jsonl"):
+            (raw / "meta" / filename).write_text((self.data / "meta" / filename).read_text())
+        info = json.loads((self.data / "meta/info.json").read_text())
+        info["features"]["observation.state"] = {"dtype": "float32", "shape": [len(state[0])]}
+        info["features"]["action.manip"] = {"dtype": "float32", "shape": [20]}
+        (raw / "meta/info.json").write_text(json.dumps(info))
+        source_file = raw / "data/chunk-000/episode_000000.parquet"
+        source_file.parent.mkdir(parents=True)
+        pq.write_table(pa.table({
+            "episode_index": [0] * 40,
+            "frame_index": list(range(40)),
+            "observation.state": pa.array(state, type=pa.list_(pa.float32(), len(state[0]))),
+            "action.manip": pa.array(action, type=pa.list_(pa.float32(), 20)),
+        }), source_file)
+        return raw
+
+    def _convert_cli(self, source: Path, output: Path, *extra: str) -> None:
+        subprocess.run([
+            sys.executable, str(TRAINING / "data_pipeline/prepare_customer_piper_views.py"),
+            "--source-root", str(source), "--output-root", str(output),
+            "--calibration", str(self.calibration), *extra,
+        ], check=True, capture_output=True, text=True)
+
     def test_h32_windows_and_calibrated_robot_config(self) -> None:
         output = self.root / "window.parquet"
         result = prepare(self.data, self.calibration, output)
         self.assertEqual(result["windows"], 8)
+        self.assertEqual(result["model_state_dim"], 20)
         table = pq.read_table(output)
         self.assertEqual(table["start_frame"].to_pylist(), list(range(8)))
         self.assertEqual(table["manip_loss_valid"].to_pylist(), [True] * 8)
@@ -94,20 +125,10 @@ class CustomerPiperTest(unittest.TestCase):
         self.assertFalse(cfg.base.enabled)
 
     def test_raw_to_camera_to_h32_and_rotation_convention(self) -> None:
-        raw = self.root / "raw"
-        (raw / "meta").mkdir(parents=True)
-        (raw / "videos").mkdir()
-        for name in ("tasks.jsonl", "episodes.jsonl"):
-            (raw / "meta" / name).write_text((self.data / "meta" / name).read_text())
-        info = json.loads((self.data / "meta/info.json").read_text())
-        info["features"]["action.manip"] = {"dtype": "float32", "shape": [20]}
-        (raw / "meta/info.json").write_text(json.dumps(info))
         source_table = pq.read_table(self.data / "data/chunk-000/episode_000000.parquet")
-        source_file = raw / "data/chunk-000/episode_000000.parquet"
-        source_file.parent.mkdir(parents=True)
-        pq.write_table(source_table.select([
-            "episode_index", "frame_index", "observation.state", "action.manip",
-        ]), source_file)
+        raw_state = source_table["observation.state"].to_pylist()
+        raw_action = source_table["action.manip"].to_pylist()
+        raw = self._raw_source("raw", raw_state, raw_action)
         calibration = json.loads(self.calibration.read_text())
         left = np.asarray(calibration["camera_from_left_base"])
         right = np.asarray(calibration["camera_from_right_base"])
@@ -115,10 +136,34 @@ class CustomerPiperTest(unittest.TestCase):
         self.assertTrue(np.allclose(camera_state(pose, left, right)[0, 3:9], [1, 0, 0, 0, 1, 0]))
         self.assertFalse(np.allclose(legacy_camera_state(pose, left, right)[0, 3:9], [1, 0, 0, 0, 1, 0]))
         prepared = self.root / "prepared"
-        build_source(raw, prepared, left, right, convert_state=camera_state,
-                     rotation_serialization="row_major_rot6d_v1")
+        self._convert_cli(raw, prepared)
         result = prepare(prepared, self.calibration, self.root / "prepared_h32.parquet")
         self.assertEqual(result["windows"], 8)
+
+    def test_camera_frame_20d_and_legacy_23d_inputs(self) -> None:
+        source_table = pq.read_table(self.data / "data/chunk-000/episode_000000.parquet")
+        calibration = json.loads(self.calibration.read_text())
+        left = np.asarray(calibration["camera_from_left_base"])
+        right = np.asarray(calibration["camera_from_right_base"])
+
+        camera_state_values = source_table["observation.state.camera_dual_arm"].to_pylist()
+        camera_action_values = source_table["action.manip.camera_dual_arm"].to_pylist()
+        camera_raw = self._raw_source("camera_raw", camera_state_values, camera_action_values)
+        camera_prepared = self.root / "camera_prepared"
+        self._convert_cli(camera_raw, camera_prepared, "--input-frame", "camera")
+        camera_result = prepare(camera_prepared, self.calibration, self.root / "camera_h32.parquet")
+        self.assertEqual(camera_result["input_frame"], "camera")
+        self.assertEqual(camera_result["model_state_dim"], 20)
+        copied = pq.read_table(camera_prepared / "data/chunk-000/episode_000000.parquet")
+        self.assertEqual(copied["observation.state.camera_dual_arm"].to_pylist(), camera_state_values)
+
+        arm_state_values = source_table["observation.state"].to_pylist()
+        base_state_values = [[0.0, 0.0, 0.0] + row for row in arm_state_values]
+        base_raw = self._raw_source("base3_raw", base_state_values, source_table["action.manip"].to_pylist())
+        base_prepared = self.root / "base3_prepared"
+        self._convert_cli(base_raw, base_prepared, "--raw-state-layout", "base3_arm20")
+        base_result = prepare(base_prepared, self.calibration, self.root / "base3_h32.parquet")
+        self.assertEqual(base_result["model_state_dim"], 20)
 
     def test_rejects_wrong_calibration_and_action_units(self) -> None:
         other = json.loads(self.calibration.read_text())
@@ -153,6 +198,10 @@ class CustomerPiperTest(unittest.TestCase):
         }
         with patch.dict(os.environ, environment):
             runtime = load_runtime_cfg(TRAINING, "uniwam_customer_piper_manip_sft")
+            self.assertEqual(int(runtime.model.proprio_dim), 20)
+            self.assertTrue(runtime.data.train.datasets[0].dataset.append_missing_eef_xy_slots)
+            self.assertTrue(runtime.model.disable_manip_aux_training)
+            self.assertEqual(float(runtime.model.loss.lambda_manip_aux_action), 0.0)
             cfg = OmegaConf.load(ROOT / "deployment/configs/uniwam_cloud_parent_async.yaml")
             cfg.checkpoint_min_bytes = 0
             checkpoint = self.root / "run/checkpoints/weights/step_000001.pt"

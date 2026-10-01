@@ -58,7 +58,10 @@ def fixed_list(values: np.ndarray, width: int) -> pa.Array:
 def build_source(
     source: Path, output: Path, left: np.ndarray, right: np.ndarray, *,
     convert_state=camera_state, rotation_serialization: str | None = None,
+    input_state_dim: int = 23, input_frame: str = "base",
 ) -> None:
+    if input_state_dim not in (20, 23):
+        raise ValueError(f"input_state_dim must be 20 or 23, got {input_state_dim}")
     staging = output.with_name(output.name + ".building")
     if output.exists() or staging.exists():
         raise FileExistsError(f"Refusing to overwrite {output} or {staging}")
@@ -83,6 +86,8 @@ def build_source(
     }
     if rotation_serialization is not None:
         info["fastwam_camera_frame_conversion"]["rotation_serialization"] = rotation_serialization
+        info["fastwam_camera_frame_conversion"]["input_frame"] = input_frame
+        info["fastwam_camera_frame_conversion"]["input_state_dim"] = input_state_dim
     (staging / "meta/info.json").write_text(json.dumps(info, indent=2) + "\n")
 
     state_values = []
@@ -94,9 +99,11 @@ def build_source(
         table = pq.read_table(source_path)
         raw_state = np.asarray(table["observation.state"].to_pylist(), dtype=np.float32)
         raw_action = np.asarray(table["action.manip"].to_pylist(), dtype=np.float32)
-        if raw_state.shape != (table.num_rows, 23) or raw_action.shape != (table.num_rows, 20):
-            raise ValueError(f"Expected state [T,23] and action [T,20] in {source_path}")
-        state_camera = convert_state(raw_state[:, 3:], left, right)
+        if raw_state.shape != (table.num_rows, input_state_dim) or raw_action.shape != (table.num_rows, 20):
+            raise ValueError(
+                f"Expected state [T,{input_state_dim}] and action [T,20] in {source_path}"
+            )
+        state_camera = convert_state(raw_state[:, -20:], left, right)
         action_camera = convert_state(raw_action, left, right)
         state_values.append(state_camera)
         action_values.append(action_camera)

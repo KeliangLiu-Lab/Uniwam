@@ -8,11 +8,15 @@ camera layouts, or action units.
 
 ## Supported input contract
 
-The action-current LeRobot input must have `observation.state` as 23 floats:
-`[base x, base y, base yaw, left EEF xyz/row-major Rot6D/gripper,
-right EEF xyz/row-major Rot6D/gripper]`. `action.manip` is the corresponding
-20-float dual-arm target in the two arm-base frames. XYZ and gripper widths are
-in meters; rotations are the first two **rows** of a rotation matrix. The
+The model state is **20D dual-arm only**:
+`[left EEF xyz/row-major Rot6D/gripper, right EEF xyz/row-major Rot6D/gripper]`.
+By default, the action-current LeRobot input has this same 20D layout in
+`observation.state` and `action.manip`, expressed in the two arm-base frames.
+Use `--input-frame camera` only when both columns already use the fixed main
+camera frame. A legacy recording with a three-value base prefix in
+`observation.state` can use `--raw-state-layout base3_arm20`; that prefix is
+never part of the model state. XYZ and gripper widths are in meters; rotations
+are the first two **rows** of a rotation matrix. The
 manipulation camera keys are `cam_manip_high`, `cam_left_wrist`, and
 `cam_right_wrist` at 424x240. Each LeRobot episode needs at least 33 frames,
 contiguous `frame_index`, videos, `meta/episodes.jsonl`, and `meta/tasks.jsonl`.
@@ -20,11 +24,21 @@ The `task` field in `tasks.jsonl` is the customer's task sentence. Keep the
 source dataset and its video directory available after conversion; the
 camera-frame dataset links to those videos.
 
+The Piper ROS client may transmit a 23D observation packet containing base 3D
+plus arm 20D for navigation/transport compatibility. The cloud takes its
+last 20 values as model proprioception; this does not make 23D a training
+state requirement.
+
 The Piper/AgileX q01/q99 stats shipped in `training/data_indices` are reused
 for both fine-tuning and deployment. Do not substitute the unified or Franka
-stats. The six auxiliary point-tracking outputs are masked out of the loss;
-they are not needed in the customer dataset. This keeps the parent 26D model
-shape without inventing point-tracking labels.
+stats. The parent action head is 26D: the first 20 positions are dual-arm
+control, and positions 20-25 are six point-tracking auxiliary values. A
+customer without point-tracking labels does **not** need to fabricate them:
+`append_missing_eef_xy_slots=true` appends six zeros with a false feature mask;
+`disable_manip_aux_training=true` excludes those slots from clean inputs,
+noise, targets, and loss; `lambda_manip_aux_action=0` disables the auxiliary
+loss. The control loss divides by the number of valid control features (20),
+not 26. The cloud action decoder uses only the first 20 values for arm control.
 
 ## Environment and assets
 
@@ -82,8 +96,17 @@ python "$REPO/training/data_pipeline/prepare_customer_piper_h32.py" \
   --output "$UNIWAM_CUSTOM_WINDOW_INDEX"
 ```
 
-The second command checks every episode's raw-to-camera pose transform,
-Rot6D geometry, gripper units, and H32 boundaries. It refuses to overwrite
+The default conversion applies the measured base-to-camera transforms to a
+20D dual-arm input. For an already camera-frame 20D dataset, add
+`--input-frame camera` to the first command; that mode copies the arm values
+without transforming them, so the user must certify the stated frame and
+calibration. For old 23D recordings, add `--raw-state-layout base3_arm20`;
+the first three values are discarded before converting the two arm poses.
+Neither option changes the 20D model input.
+
+The second command checks the base-to-camera transform for base-frame input,
+or exact value preservation for declared camera-frame input, plus Rot6D
+geometry, gripper units, and H32 boundaries. It refuses to overwrite
 an existing index. The historical `prepare_agilex_camera_views.py` remains
 only for byte-equivalent reconstruction of the older six-source mobile data;
 do not use it for a new customer dataset.

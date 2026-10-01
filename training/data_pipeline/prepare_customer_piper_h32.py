@@ -66,6 +66,9 @@ def prepare(dataset_root: Path, calibration_path: Path, output: Path) -> dict:
         raise ValueError("Dataset lacks camera-frame conversion metadata; run prepare_customer_piper_views.py first")
     if recorded.get("rotation_serialization") != "row_major_rot6d_v1":
         raise ValueError("Dataset was not built with the customer row-major Rot6D converter")
+    input_frame = recorded.get("input_frame", "base")
+    if input_frame not in ("base", "camera"):
+        raise ValueError(f"Unsupported customer input frame: {input_frame!r}")
     calibration = _calibration(calibration_path)
     for key, value in calibration.items():
         if not np.allclose(np.asarray(recorded[key], dtype=np.float64), value, atol=1e-6):
@@ -107,13 +110,19 @@ def prepare(dataset_root: Path, calibration_path: Path, output: Path) -> dict:
             _check_arm(np.asarray(table[name].to_pylist(), dtype=np.float32), f"episode {index} {name}")
         raw_state = np.asarray(table["observation.state"].to_pylist(), dtype=np.float32)
         raw_action = np.asarray(table["action.manip"].to_pylist(), dtype=np.float32)
-        if raw_state.shape != (length, 23) or raw_action.shape != (length, 20):
-            raise ValueError(f"Episode {index} requires raw 23D state and 20D action")
-        for name, raw in ((ARM_COLUMNS[0], raw_state[:, 3:]), (ARM_COLUMNS[1], raw_action)):
-            rebuilt = camera_state(raw, calibration["camera_from_left_base"], calibration["camera_from_right_base"])
+        expected_state_dim = int(recorded.get("input_state_dim", raw_state.shape[-1]))
+        if expected_state_dim not in (20, 23) or raw_state.shape != (length, expected_state_dim) or raw_action.shape != (length, 20):
+            raise ValueError(f"Episode {index} requires 20D dual-arm state and 20D action; optional base3 makes state 23D")
+        if input_frame == "camera" and expected_state_dim != 20:
+            raise ValueError("Camera-frame input must contain only the 20D dual-arm state")
+        for name, raw in ((ARM_COLUMNS[0], raw_state[:, -20:]), (ARM_COLUMNS[1], raw_action)):
+            rebuilt = (
+                camera_state(raw, calibration["camera_from_left_base"], calibration["camera_from_right_base"])
+                if input_frame == "base" else raw
+            )
             stored = np.asarray(table[name].to_pylist(), dtype=np.float32)
             if not np.allclose(rebuilt, stored, atol=1e-4):
-                raise ValueError(f"Episode {index} {name} disagrees with the calibrated raw arm pose")
+                raise ValueError(f"Episode {index} {name} disagrees with the declared {input_frame}-frame arm pose")
         count = max(length - 32, 0)
         values = {
             "episode_index": index,
@@ -142,7 +151,7 @@ def prepare(dataset_root: Path, calibration_path: Path, output: Path) -> dict:
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
-    return {"episodes": len(episodes), "windows": len(rows["start_frame"]), "output": str(output)}
+    return {"episodes": len(episodes), "windows": len(rows["start_frame"]), "model_state_dim": 20, "input_frame": input_frame, "output": str(output)}
 
 
 def main() -> None:
