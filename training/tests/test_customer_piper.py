@@ -123,6 +123,11 @@ class CustomerPiperTest(unittest.TestCase):
         self.assertEqual(cfg.camera_frame.camera_from_right_base[0][3], 0.3)
         self.assertTrue(cfg.control.dry_run)
         self.assertFalse(cfg.base.enabled)
+        self.assertEqual(cfg.prefix_steps, 12)
+        self.assertEqual(cfg.min_prefix_steps, 6)
+        self.assertTrue(cfg.adaptive_prefix.enabled)
+        self.assertTrue(cfg.replan_while_queue_nonempty)
+        self.assertEqual(cfg.chunk_low_watermark, 13)
 
     def test_raw_to_camera_to_h32_and_rotation_convention(self) -> None:
         source_table = pq.read_table(self.data / "data/chunk-000/episode_000000.parquet")

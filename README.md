@@ -196,6 +196,13 @@ contracts together before training.
 
 ## Cloud inference and robot execution
 
+Asynchronous chunked inference is enabled in the supplied cloud and robot
+configs. The client starts a new cloud request while it is still executing the
+previous action queue; the prefix length adapts to round-trip latency. The
+first request has `prefix=0` because no queued actions exist yet. See
+[Asynchronous inference](docs/FINETUNING.md#asynchronous-inference) for the
+prefix contract, cross-machine SSH forwarding, and expected log fields.
+
 Use the exact fine-tuned checkpoint and the exact task sentence from the
 experiment's `tasks.jsonl`:
 
@@ -228,6 +235,8 @@ CONFIG=/absolute/path/to/customer_robot.yaml \
 bash "$REPO/deployment/scripts/launch_uniwam_piper_client.sh" \
   server_host=127.0.0.1 server_port=8031 \
   inference_mode=manip_only task_prompt="$TASK_PROMPT" \
+  prefix_steps=12 min_prefix_steps=6 \
+  adaptive_prefix.enabled=true replan_while_queue_nonempty=true \
   control.dry_run=true base.dry_run=true
 ```
 

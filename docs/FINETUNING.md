@@ -146,6 +146,25 @@ result; a successful Hydra compose or data preflight is not a training run.
 
 ## Cloud and Piper edge
 
+### Asynchronous inference
+
+The included async-prefix configuration is enabled without an additional
+switch. Training uses `model.async_prefix_training.enabled=true`, with a 70%
+chance of sampling a prefix of 6--12 steps; the remaining training samples
+use prefix 0. Cloud inference has `contract.async_enabled=true`, a 32-step
+action horizon, and a 20-step executable suffix. The client runs at 30 Hz,
+starts another request before the current queue is empty, and chooses a prefix
+between 6 and 12 steps from a moving estimate of request round-trip time.
+The initial request necessarily uses prefix 0 because the queue is empty.
+
+The robot config generated below inherits `prefix_steps=12`,
+`min_prefix_steps=6`, `adaptive_prefix.enabled=true`,
+`replan_while_queue_nonempty=true`, `chunk_low_watermark=13`, and
+`max_queue_steps=32`. Keep these settings consistent with the cloud contract.
+`inference_mode=manip_only` chooses the manipulation branch; it does **not**
+turn asynchronous execution off. Use `paired` only with a checkpoint and data
+contract that include the navigation branch.
+
 Use the fine-tuned checkpoint, **not** the initialization checkpoint, with the
 selected task/data contract. Keep the training root and the data
 paths accessible to the cloud process because the saved checkpoint config
@@ -187,8 +206,28 @@ python "$REPO/deployment/scripts/make_customer_piper_robot_config.py" \
 CONFIG=/absolute/path/to/customer_robot.yaml \
 bash "$REPO/deployment/scripts/launch_uniwam_piper_client.sh" \
   server_host=127.0.0.1 server_port=8031 inference_mode=manip_only \
+  prefix_steps=12 min_prefix_steps=6 \
+  adaptive_prefix.enabled=true replan_while_queue_nonempty=true \
   task_prompt="$TASK_PROMPT" control.dry_run=true base.dry_run=true
 ```
+
+If the cloud server runs on a different host reachable by SSH, forward its
+port from the robot machine, then change only the client's local port:
+
+```bash
+ssh -N -L 18031:127.0.0.1:8031 user@cloud-host
+# In another terminal, launch the client with server_port=18031.
+```
+
+Keep the SSH forward open while the client runs. The cloud server must first
+pass its checkpoint contract check and listen on port 8031. In a healthy client
+log, the first `received async-prefix12` line may show `prefix=0`; subsequent
+replans should show a prefix in the trained 6--12 range when enough queued
+actions remain. `execute_T=20`, `queue`, `rtt`, and `adaptive_prefix` show the
+suffix length, queue state, request latency, and next target prefix. A repeated
+connection error means the server or tunnel is unreachable, not that the
+prefix feature is disabled. Begin with `control.dry_run=true` and
+`base.dry_run=true`; physical execution requires independent robot checks.
 
 Activate the environment through `scripts/activate_uniwam_env.sh` after
 replacing every placeholder. One dataset or many may be used; define the
