@@ -1,11 +1,11 @@
-# Customer Data Preparation
+# Data Preparation
 
-The customer data path starts from LeRobot episode tables and produces
+The data path starts from LeRobot episode tables and produces
 camera-frame state/action columns, H32 windows, text embeddings, and VAE
 latents. It does not require any bundled dataset or a fixed number of sources.
 
 For a Piper-compatible dual-arm dataset, first edit and source
-`scripts/activate_customer_env.sh` from the repository root. The dataset
+`scripts/activate_uniwam_env.sh` from the repository root. The dataset
 directory, window index, text cache, and latent directory are output paths;
 they may not exist when the environment is first loaded.
 
@@ -30,9 +30,9 @@ python "$REPO/training/data_pipeline/prepare_customer_piper_h32.py" \
 ```
 
 The converter refuses to overwrite existing output and validates Rot6D
-orthogonality. Source frames in the supplied customer config are `424x240`
+orthogonality. Source frames in the supplied config are `424x240`
 pixels (`W x H`); the multi-camera model canvas is `384x320` pixels after
-mosaic assembly and resize/pad. Adjust the customer's `shape_meta` and
+mosaic assembly and resize/pad. Adjust `shape_meta` and
 camera preprocessing together if their recording resolution differs.
 
 ## Text and latent caches
@@ -47,14 +47,14 @@ bash data_pipeline/launch_precompute_vae.sh
 python scripts/preflight_customer_piper.py
 ```
 
-The prompt cache uses the exact task text from the customer's
-`meta/tasks.jsonl`. The latent source name must match the prepared dataset
+The prompt cache uses the exact task text from `meta/tasks.jsonl`. The latent
+source name must match the prepared dataset
 directory name. The preflight loads a real sample and checks the action shape,
 normalization range, and missing-label mask before training.
 
 ## More datasets and action slots
 
-For several datasets, add one entry per source to a copy of the customer Hydra
+For several datasets, add one entry per source to a copy of the Hydra
 data config. Set `source_sampling_weights` to the desired mixture and give each
 entry its own dataset root, H32 index, latent source, prompt set, and compatible
 statistics. The number of entries and weights are experiment parameters, not
@@ -67,5 +67,5 @@ The default navigation output is 3D. A 9D navigation extension appends a 4D
 target bbox and 2D operating point; it requires a matching sidecar, mask,
 model head, and decoder. See `docs/ACTION_SLOTS.md` for slot order and masking.
 
-The customer path above is self-contained once the customer's own data,
+The path above is self-contained once the experiment's data,
 calibration, model weights, and caches are available.

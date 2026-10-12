@@ -24,7 +24,7 @@ controller. A source without tracking labels may append six zero values with a
 false feature mask, or disable the auxiliary head during fine-tuning. It must
 not invent labels.
 
-The released customer recipe uses `manip_action_dim: 26` and
+The included fine-tuning recipe uses `manip_action_dim: 26` and
 `robot_manip_action_dim: 20`. The data loader validates the suffix width and
 the training loss uses the feature mask when computing its denominator. Thus an
 invalid auxiliary value contributes neither a numerator nor a denominator.

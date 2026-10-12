@@ -13,7 +13,7 @@ video/action model. The public interfaces are organized around three ideas:
    the robot client executes the previous chunk, with configurable prefix and
    replanning behavior.
 
-The repository is intended to be adapted to customer-owned tasks and datasets.
-The data pipeline requires the customer to provide calibration, episode tables,
+The repository is intended to be adapted to new tasks and datasets.
+The data pipeline requires calibration, episode tables,
 task prompts, latent caches, and statistics that match the selected embodiment
 and action representation.

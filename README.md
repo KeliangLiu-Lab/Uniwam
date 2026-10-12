@@ -2,11 +2,11 @@
 
 UniWAM is a camera-frame world-action model for dual-arm mobile manipulation.
 This repository provides the training, data preparation, cloud inference, and
-robot-client code needed to adapt the model to a customer's own task data.
+robot-client code needed to adapt the model to your task data.
 
-The repository does not contain customer data, videos, model weights, text
-embedding caches, VAE latent caches, camera calibration, or robot description
-files. These assets stay on the customer's machines.
+Training and deployment require external datasets, videos, model weights, text
+embedding caches, VAE latent caches, camera calibration, and robot description
+files. Set their paths explicitly in your environment.
 
 ## Repository layout
 
@@ -17,22 +17,44 @@ files. These assets stay on the customer's machines.
 - `deployment`: cloud server, prompt preparation, and robot-client code.
 - `docs`: data, action-slot, fine-tuning, and deployment instructions.
 
-## Quick start
+For the full data-to-deployment sequence, see
+[Fine-tuning and Deployment](docs/FINETUNING.md).
 
-Use Python 3.10 or newer, a CUDA-compatible PyTorch installation, Hydra,
-PyArrow, NumPy, and the packages listed in the training and deployment
-requirements files.
+## Installation
 
-After replacing the placeholders in the environment template, activate it in
-the shell that will run training:
+Clone this repository, then install Conda or micromamba and check that
+`nvidia-smi` detects the training
+GPU. From the repository root, create a Python 3.10 environment, install the
+PyTorch wheel matching the installed CUDA driver, then install the pinned
+dependencies. For a driver that supports CUDA 12.8:
 
 ```bash
-source scripts/activate_customer_env.sh
+conda create -n uniwam python=3.10 -y
+conda activate uniwam
+conda install -c conda-forge ffmpeg git ninja -y
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install torch==2.7.1 torchvision==0.22.1 \
+  --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -r training/requirements-training.txt
+python -m pip install -r deployment/requirements-cloud.txt
+python -c 'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda)'
+```
+
+Use the appropriate PyTorch wheel index if the driver does not support CUDA
+12.8. The cloud server uses this environment. For CUDA selection, FFmpeg,
+optional ROS 2 robot-side setup, and smoke tests, see
+[Installation](docs/INSTALLATION.md).
+
+Edit the path block in the environment script and source it in the same shell
+before preparing data or training:
+
+```bash
+source scripts/activate_uniwam_env.sh
 ```
 
 The template is an ordinary shell file. It does not guess paths, download
-private assets, or modify the repository. Edit the path block once for the
-customer's machine, then source it before running the commands below. The
+private assets, or modify the repository. Edit the path block once for your
+machine, then source it before running the commands below. The
 script checks the inputs needed at this stage. Prepared data, window indexes,
 and caches can be generated afterward.
 
@@ -53,7 +75,7 @@ configuration is 3 values `(dx, dy, dtheta)`. An optional navigation extension
 uses 9 values, `3 + 4 + 2`, by appending target-object bbox `(xmin, ymin,
 xmax, ymax)` and operating-point `(x, y)`. See
 [Action Slots and Feature Masks](docs/ACTION_SLOTS.md) before changing a
-dimension. The supplied checkpoint remains 3D; enabling 9D requires coordinated
+dimension. A 3D checkpoint remains 3D; enabling 9D requires coordinated
 changes to the sidecar, dataset, model head, normalization, decoder, and tests.
 
 ### Image sizes
@@ -68,9 +90,9 @@ uses the final mosaic coordinates.
 
 ### Missing auxiliary labels
 
-Customers without point-tracking labels should append finite placeholder values
-and set their six feature-mask entries to `false`. For the included customer
-fine-tuning recipe, use `append_missing_eef_xy_slots=true` together with
+If point-tracking labels are unavailable, append finite placeholder values
+and set their six feature-mask entries to `false`. For the included fine-tuning
+recipe, use `append_missing_eef_xy_slots=true` together with
 `disable_manip_aux_training=true` (or an auxiliary loss weight of zero). Masked
 features are removed from the loss numerator and denominator. Never mark a
 missing value valid just to satisfy a tensor shape.
@@ -79,7 +101,7 @@ For the 9D navigation extension, return a value tensor and boolean mask for
 each of the six appended bbox/operating-point slots. Missing bbox coordinates
 and operating points are masked independently.
 
-## Prepare a customer's data
+## Prepare data
 
 Measure the rigid transforms from each arm base to the fixed camera and save
 them as `camera_from_left_base` and `camera_from_right_base` in a JSON file.
@@ -103,12 +125,12 @@ in the fixed camera frame, use the documented camera-frame option. For a legacy
 23-value observation with a three-value base prefix, use the documented
 `base3_arm20` option; the model still receives only the 20 arm values.
 
-Customers may train with one dataset or combine multiple datasets. For a
+You may train with one dataset or combine multiple datasets. For a
 multi-dataset experiment, add one dataset entry per prepared dataset in a copy
-of the customer Hydra data config, assign explicit sampling weights, and give
+of the Hydra data config, assign explicit sampling weights, and give
 each entry its own window index, latent source, prompt set, and statistics
-contract. Do not copy a dataset name or ratio from this repository merely
-because it appears in an example.
+contract. The number of sources and their sampling weights are determined by
+the experiment.
 
 ## Build caches and train
 
@@ -137,12 +159,24 @@ The recipe loads the supplied initialization checkpoint as weights, creates a
 new optimizer, and writes periodic checkpoints. Increase the first argument to
 the number of GPUs on one host. For multiple hosts, use the standard
 `NODE_RANK`, `MASTER_ADDR`, `MASTER_PORT`, and `NNODES` environment variables
-with the same customer task configuration on every host.
+with the same task configuration on every host.
+
+Set the run length, per-GPU batch size, and checkpoint interval with Hydra
+overrides, for example:
+
+```bash
+bash scripts/train_zero1.sh 8 task=uniwam_customer_piper_manip_sft \
+  max_steps=50000 batch_size=8 save_every=5000
+```
+
+The supplied task config is a single-source Piper-compatible example. For a
+different embodiment or action representation, adapt the data and deployment
+contracts together before training.
 
 ## Cloud inference and robot execution
 
 Use the exact fine-tuned checkpoint and the exact task sentence from the
-customer's `tasks.jsonl`:
+experiment's `tasks.jsonl`:
 
 ```bash
 export CHECKPOINT=/absolute/path/to/run/checkpoints/weights/step_xxxxxx.pt
