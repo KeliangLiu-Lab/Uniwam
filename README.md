@@ -33,7 +33,8 @@ source scripts/activate_customer_env.sh
 The template is an ordinary shell file. It does not guess paths, download
 private assets, or modify the repository. Edit the path block once for the
 customer's machine, then source it before running the commands below. The
-script checks that required files and directories are readable.
+script checks the inputs needed at this stage. Prepared data, window indexes,
+and caches can be generated afterward.
 
 ## Data contract
 

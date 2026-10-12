@@ -13,8 +13,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   exit 2
 fi
 
-set -u
-
 UNIWAM_REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # --------------------------- CUSTOMER PATHS ---------------------------
@@ -26,8 +24,8 @@ export UNIWAM_INITIALIZATION_CHECKPOINT="${UNIWAM_INITIALIZATION_CHECKPOINT:-/ab
 # should edit/use UNIWAM_INITIALIZATION_CHECKPOINT above.
 export UNIWAM_PARENT_CHECKPOINT="$UNIWAM_INITIALIZATION_CHECKPOINT"
 export UNIWAM_TEXT_CACHE_DIR="${UNIWAM_TEXT_CACHE_DIR:-/absolute/path/to/text-embedding-cache}"
-export UNIWAM_CUSTOM_SOURCE_NAME="${UNIWAM_CUSTOM_SOURCE_NAME:-customer_camera_frame_task}"
 export UNIWAM_CUSTOM_DATA="${UNIWAM_CUSTOM_DATA:-/absolute/path/to/customer_camera_frame_dataset}"
+export UNIWAM_CUSTOM_SOURCE_NAME="${UNIWAM_CUSTOM_SOURCE_NAME:-$(basename -- "$UNIWAM_CUSTOM_DATA")}"
 export UNIWAM_CUSTOM_WINDOW_INDEX="${UNIWAM_CUSTOM_WINDOW_INDEX:-/absolute/path/to/customer_h32_window_index.parquet}"
 export UNIWAM_CUSTOM_LATENT_ROOT="${UNIWAM_CUSTOM_LATENT_ROOT:-/absolute/path/to/customer_vae_latents}"
 export UNIWAM_PIPER_URDF="${UNIWAM_PIPER_URDF:-/absolute/path/to/robot_description.urdf}"
@@ -63,15 +61,20 @@ _uniwam_require_file() {
   fi
 }
 
-_uniwam_require_dir UNIWAM_TRAINING_ROOT "$UNIWAM_TRAINING_ROOT"
-_uniwam_require_dir DIFFSYNTH_MODEL_BASE_PATH "$DIFFSYNTH_MODEL_BASE_PATH"
-_uniwam_require_file UNIWAM_INITIALIZATION_CHECKPOINT "$UNIWAM_INITIALIZATION_CHECKPOINT"
-_uniwam_require_dir UNIWAM_TEXT_CACHE_DIR "$UNIWAM_TEXT_CACHE_DIR"
-_uniwam_require_dir UNIWAM_CUSTOM_DATA "$UNIWAM_CUSTOM_DATA"
-_uniwam_require_file UNIWAM_CUSTOM_WINDOW_INDEX "$UNIWAM_CUSTOM_WINDOW_INDEX"
-_uniwam_require_dir UNIWAM_CUSTOM_LATENT_ROOT "$UNIWAM_CUSTOM_LATENT_ROOT"
+_uniwam_require_dir UNIWAM_TRAINING_ROOT "$UNIWAM_TRAINING_ROOT" || return 1
+_uniwam_require_dir DIFFSYNTH_MODEL_BASE_PATH "$DIFFSYNTH_MODEL_BASE_PATH" || return 1
+_uniwam_require_file UNIWAM_INITIALIZATION_CHECKPOINT "$UNIWAM_INITIALIZATION_CHECKPOINT" || return 1
+# The dataset, window index, text cache, and VAE cache are outputs of the
+# preparation steps and need not exist when this file is first sourced.
+for _uniwam_output_name in UNIWAM_TEXT_CACHE_DIR UNIWAM_CUSTOM_DATA UNIWAM_CUSTOM_WINDOW_INDEX UNIWAM_CUSTOM_LATENT_ROOT; do
+  _uniwam_output_path="${!_uniwam_output_name}"
+  if _uniwam_placeholder "$_uniwam_output_path"; then
+    echo "UniWAM: replace the placeholder for $_uniwam_output_name." >&2
+    return 1
+  fi
+done
 if [[ -n "$UNIWAM_EEF_SIDECAR_ROOT" ]]; then
-  _uniwam_require_dir UNIWAM_EEF_SIDECAR_ROOT "$UNIWAM_EEF_SIDECAR_ROOT"
+  _uniwam_require_dir UNIWAM_EEF_SIDECAR_ROOT "$UNIWAM_EEF_SIDECAR_ROOT" || return 1
 fi
 
 export PYTHONPATH="$UNIWAM_TRAINING_ROOT/src:$UNIWAM_TRAINING_ROOT${PYTHONPATH:+:$PYTHONPATH}"

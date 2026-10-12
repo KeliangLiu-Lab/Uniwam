@@ -1,81 +1,72 @@
-# Prepared-Data Pipeline
+# Customer Data Preparation
 
-This directory contains the reproducible processing stages from prepared
-LeRobot episode tables to UniWAM model inputs. The six-source recipe is one
-historical example; customer data may contain one or many datasets. It does not embed raw
-datasets, videos, VAE tensors, or text encoder caches.
+The customer data path starts from LeRobot episode tables and produces
+camera-frame state/action columns, H32 windows, text embeddings, and VAE
+latents. It does not require any bundled dataset or a fixed number of sources.
 
-For a new Piper/AgileX customer task, use `prepare_customer_piper_views.py`
-and `prepare_customer_piper_h32.py`, then follow
-`docs/CUSTOMER_PIPER_FINETUNING.md`. `prepare_agilex_camera_views.py` now uses
-the same row-major rotation convention by default. Only the explicit
-`--legacy-retrain-rot6d` option reproduces the malformed 2026-09-28 tables.
+For a Piper-compatible dual-arm dataset, first edit and source
+`scripts/activate_customer_env.sh` from the repository root. The dataset
+directory, window index, text cache, and latent directory are output paths;
+they may not exist when the environment is first loaded.
 
-## Stages
+## Camera-frame conversion
 
-1. Convert legacy state/action representations with the Rot6D and SE(2)
-   converters when required by the source contract.
-2. Materialize camera-frame state/action columns and build H32 window tables.
-   Do not substitute the newer mobile sources for the pre-rename parent run.
-3. Route navigation/manipulation phase rows and preserve stable
-   `(source_episode_index, start_frame)` keys.
-4. Build EEF-XY/visibility sidecars and validate their six-feature masks.
-5. Build per-embodiment q01/q99 statistics and a prompt manifest for the
-   customer's task set. The historical six-source example has 818 prompt rows;
-   this is not a required dataset or prompt count.
-6. Generate or remap VAE latent rows and run the fail-closed validator before
-   training.
-
-The exact six-source parent indexes and latent row remaps are included under
-`training/reference_archives/` as hashed archive parts. Run
-`training/scripts/bootstrap_reference_artifacts.sh` to restore them under
-`training/reference/`. The episode tables and latent tensors remain external.
-
-## Prepare a new mobile data experiment
-
-Run each source into a new output directory. The converter refuses to replace
-an existing output and publishes the directory only after all episodes finish.
+Record the two measured rigid transforms from arm base to fixed camera in a
+JSON file. The input LeRobot tables must have 20D dual-arm state and action
+columns, with each arm ordered as XYZ, row-major Rot6D, and gripper width.
+For an older observation with a 3D base prefix, use
+`--raw-state-layout base3_arm20`. Do not copy another robot's calibration.
 
 ```bash
-python3 training/data_pipeline/prepare_agilex_camera_views.py \
-  --source-root /path/to/cup_tray_action_current_v1 \
-  --output-root /path/to/cup_tray_camera_frame \
-  --calibration training/data_pipeline/retrain_camera_extrinsics.json
+python "$REPO/training/data_pipeline/prepare_customer_piper_views.py" \
+  --source-root /absolute/path/to/customer_lerobot \
+  --output-root "$UNIWAM_CUSTOM_DATA" \
+  --calibration /absolute/path/to/customer_camera_extrinsics.json
+
+python "$REPO/training/data_pipeline/prepare_customer_piper_h32.py" \
+  --dataset-root "$UNIWAM_CUSTOM_DATA" \
+  --calibration /absolute/path/to/customer_camera_extrinsics.json \
+  --output "$UNIWAM_CUSTOM_WINDOW_INDEX"
 ```
 
-Repeat for moving white box and ordinary color blocks. Corrected output is
-validated against row-major Rot6D geometry. The completed 2026-09-28 run used
-the older, malformed conversion; adding `--legacy-retrain-rot6d` to the command
-above reproduces that run's three source tables, but must only be used for
-historical comparison. A new experiment needs its own matching H32/phase
-indexes, VAE latent cache, EEF sidecars, and recomputed embodiment statistics;
-do not reuse the parent's stats or call it a name-only reproduction.
+The converter refuses to overwrite existing output and validates Rot6D
+orthogonality. Source frames in the supplied customer config are `424x240`
+pixels (`W x H`); the multi-camera model canvas is `384x320` pixels after
+mosaic assembly and resize/pad. Adjust the customer's `shape_meta` and
+camera preprocessing together if their recording resolution differs.
 
-## Manifest
-
-Copy `pipeline_manifest.example.json`, fill every source, sidecar, cache, and
-prompt-input path, then use the manifest with the stats and prompt builders.
-Those builders require the manifest and never fall back to machine-specific
-defaults. `prepare_camera_frame_cross_embodiment_h32.py` similarly requires a
-manifest and an empty output directory.
-
-The parent gate accepts logical Parquet equality even when Parquet writer
-compression metadata differs. Use `compare_prepared_episode_tables.py --atol
-1e-6` for numeric camera-frame comparisons; use its default mode when exact
-Arrow equality is required.
-
-## Checks
+## Text and latent caches
 
 ```bash
-python3 -m unittest discover -s training/tests -p 'test_data_pipeline.py'
-python3 training/data_pipeline/validate_six_source_prepared_data.py \
-  --manifest /path/to/pipeline_manifest.json \
-  --parent-reference training/data_pipeline/parent_200k_artifact_reference.json \
-  --parent-index-root training/reference/indices \
-  --output validation_report.json
+cd "$UNIWAM_TRAINING_ROOT"
+python scripts/precompute_text_embeds.py task=uniwam_customer_piper_manip_sft
+TASK=uniwam_customer_piper_manip_sft \
+OUTPUT_ROOT="$UNIWAM_CUSTOM_LATENT_ROOT" \
+NPROC_PER_NODE=1 \
+bash data_pipeline/launch_precompute_vae.sh
+python scripts/preflight_customer_piper.py
 ```
 
-The validator reports structural validity separately from parent identity. Do
-not replace a source with a newer dataset that happens to have the same task
-name; source episode membership, phase rows, normalization statistics, and
-latent remaps are part of the training contract.
+The prompt cache uses the exact task text from the customer's
+`meta/tasks.jsonl`. The latent source name must match the prepared dataset
+directory name. The preflight loads a real sample and checks the action shape,
+normalization range, and missing-label mask before training.
+
+## More datasets and action slots
+
+For several datasets, add one entry per source to a copy of the customer Hydra
+data config. Set `source_sampling_weights` to the desired mixture and give each
+entry its own dataset root, H32 index, latent source, prompt set, and compatible
+statistics. The number of entries and weights are experiment parameters, not
+requirements imposed by UniWAM.
+
+The default manipulation output is 20 robot values plus six optional
+point-tracking values. A dataset without tracking annotations should append
+six zero placeholders with false feature masks and disable auxiliary training.
+The default navigation output is 3D. A 9D navigation extension appends a 4D
+target bbox and 2D operating point; it requires a matching sidecar, mask,
+model head, and decoder. See `docs/ACTION_SLOTS.md` for slot order and masking.
+
+The repository also includes specialized scripts and reference artifacts for
+particular experiments. Those are examples of data contracts, not prerequisites
+for the customer data path above.
