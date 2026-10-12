@@ -28,10 +28,16 @@ The `task` field in `tasks.jsonl` is the task sentence. Keep the
 source dataset and its video directory available after conversion; the
 camera-frame dataset links to those videos.
 
-Here `424x240` is the source frame size (`W=424`, `H=240`). The loader creates
-the model camera canvas at `384x320` (`W=384`, `H=320`) after mosaic assembly and
-resize/pad. Auxiliary image coordinates must use the coordinate frame declared
-by their sidecar; the supplied EEF sidecar uses the final `384x320` canvas.
+Here `424x240` is each source frame's `W x H`, not the model input size. The
+main image is resized to `384x216`; the left and right wrist images are resized
+to `192x108` each and concatenated left-to-right below the main image. This
+forms a `384x324` mosaic. Cropping its first two and last two rows yields the
+`384x320` model input (`W x H`). The main view occupies final rows 0-213 and
+the wrist views occupy rows 214-319. The navigation stream substitutes
+`cam_nav` for the top image and uses the same two wrist views below. Resize is
+bilinear with antialiasing. Auxiliary image coordinates must use the coordinate
+frame declared by their sidecar; the supplied EEF sidecar uses the final
+`384x320` manipulation canvas.
 
 The Piper ROS client may transmit a 23D observation packet containing base 3D
 plus arm 20D for navigation/transport compatibility. The cloud takes its

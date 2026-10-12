@@ -30,10 +30,12 @@ python "$REPO/training/data_pipeline/prepare_customer_piper_h32.py" \
 ```
 
 The converter refuses to overwrite existing output and validates Rot6D
-orthogonality. Source frames in the supplied config are `424x240`
-pixels (`W x H`); the multi-camera model canvas is `384x320` pixels after
-mosaic assembly and resize/pad. Adjust `shape_meta` and
-camera preprocessing together if their recording resolution differs.
+orthogonality. Source frames in the supplied config are `424x240` pixels
+(`W x H`). The loader puts a `384x216` main image above two `192x108` wrist
+images, then crops two rows from both the top and bottom of the resulting
+`384x324` mosaic. The model sees `384x320` pixels. See the layout diagram in
+the repository README. Adjust `shape_meta` and camera preprocessing together
+if the recording resolution differs.
 
 ## Text and latent caches
 

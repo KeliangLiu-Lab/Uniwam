@@ -80,13 +80,34 @@ changes to the sidecar, dataset, model head, normalization, decoder, and tests.
 
 ### Image sizes
 
-The source camera frames are `W=424, H=240`. The loader builds the camera
-mosaic and resize/pads it to the model canvas `W=384, H=320` (`video_size:
-[320, 384]`). Thus `424x240` describes the source frame, while `384x320`
-describes the model input canvas. Do not reinterpret these as competing model
-resolutions. Auxiliary image coordinates must declare whether they use the
-source frame or the final `384x320` mosaic; the supplied EEF sidecar contract
-uses the final mosaic coordinates.
+The supplied Piper configuration reads three `424x240` source images (`W x H`):
+`cam_manip_high`, `cam_left_wrist`, and `cam_right_wrist`. For each video frame,
+it resizes the main view to `384x216` and each wrist view to `192x108`, using
+bilinear interpolation with antialiasing. It places the main view across the
+top and the wrist views side by side below it:
+
+```text
+             x = 0                       383
+             +-----------------------------+
+  y = 0      |        main 384 x 216       |
+             +--------------+--------------+  y = 216
+             | left 192 x 108|right 192 x 108|
+             +--------------+--------------+  y = 324
+```
+
+The intermediate mosaic is `384x324` (`W x H`). Rows 0-1 and 322-323 are
+cropped, leaving the `384x320` model input (`video_size: [320, 384]`, `H x W`).
+In final-canvas coordinates, the main view occupies rows 0-213, and the wrist
+row occupies rows 214-319. Navigation uses the same layout with `cam_nav` in
+the top position. The edge client sends each camera image at `424x240`; the
+cloud builds the same mosaic used by training. EEF tracking coordinates must
+refer to the final `384x320` manipulation canvas, not to an individual source
+image. For an EEF point `(x, y)` in the `424x240` main image, the sidecar uses
+pixel-center mapping `x' = (x + 0.5) * 384/424 - 0.5` and
+`y' = (y + 0.5) * 216/240 - 0.5 - 2`, then normalizes `(x', y')` on the final
+canvas to `[-1, 1]`. Points outside the cropped canvas are masked. See
+[Fine-tuning and Deployment](docs/FINETUNING.md) for the camera keys and
+calibration contract.
 
 ### Missing auxiliary labels
 
