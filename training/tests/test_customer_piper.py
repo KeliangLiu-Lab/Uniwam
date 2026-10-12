@@ -25,7 +25,7 @@ sys.path[:0] = [str(TRAINING / "data_pipeline"), str(TRAINING / "src"),
 
 from prepare_customer_piper_h32 import prepare  # noqa: E402
 from prepare_customer_piper_views import camera_state  # noqa: E402
-from prepare_agilex_camera_views import camera_state as legacy_camera_state  # noqa: E402
+from prepare_agilex_camera_views import legacy_camera_state  # noqa: E402
 from make_customer_piper_robot_config import generate  # noqa: E402
 from uniwam_piper_cloud.policy_rot6d import (  # noqa: E402
     AsyncPrefixContract, load_runtime_cfg, validate_checkpoint_contract,

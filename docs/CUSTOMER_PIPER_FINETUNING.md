@@ -1,5 +1,8 @@
 # Fine-tune UniWAM on a Piper/AgileX task
 
+For the complete slot order and masking contract, read
+[Action Slots and Feature Masks](ACTION_SLOTS.md) before changing dimensions.
+
 This path adapts the six-source 20D-state/26D-action checkpoint to a **single
 Piper/AgileX manipulation dataset**. The customer supplies their own task text,
 videos, robot calibration, and LeRobot episodes. It does not require any of the
@@ -31,8 +34,10 @@ state requirement.
 
 The Piper/AgileX q01/q99 stats shipped in `training/data_indices` are reused
 for both fine-tuning and deployment. Do not substitute the unified or Franka
-stats. The parent action head is 26D: the first 20 positions are dual-arm
-control, and positions 20-25 are six point-tracking auxiliary values. A
+stats. The parent manipulation action head is 26D: the first 20 positions are
+dual-arm control, and positions 20-25 are six point-tracking auxiliary values.
+The current navigation head is 3D `(dx, dy, dtheta)`; an optional 9D navigation
+extension is `3 + 4 + 2`, adding target bbox `xyxy` and operating-point `xy`. A
 customer without point-tracking labels does **not** need to fabricate them:
 `append_missing_eef_xy_slots=true` appends six zeros with a false feature mask;
 `disable_manip_aux_training=true` excludes those slots from clean inputs,
@@ -186,6 +191,11 @@ bash "$REPO/deployment/scripts/launch_uniwam_piper_client.sh" \
   server_host=127.0.0.1 server_port=8031 inference_mode=manip_only \
   task_prompt="$TASK_PROMPT" control.dry_run=true base.dry_run=true
 ```
+
+The environment blocks above are intended to be pasted into the user's current
+shell after replacing every placeholder. Do not put the example paths into a
+repository launcher or expect a launcher to infer them. A customer's data may be
+one dataset or many; the original multi-source ratios are historical examples only.
 
 If cloud and edge are on different machines, establish an authenticated SSH
 forward for the cloud listen port and set `server_port` to the chosen local

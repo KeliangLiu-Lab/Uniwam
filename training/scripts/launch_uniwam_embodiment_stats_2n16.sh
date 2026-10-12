@@ -12,7 +12,16 @@ export UNIWAM_TRAINING_ROOT="$ROOT"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export WANDB_ENABLED="${WANDB_ENABLED:-false}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
-TASK="${TASK:-uniwam_six_source_retrain_200k}"
+TASK="${TASK:-uniwam_camera_frame_six_source_manip26_embodiment_stats_200k}"
+if [[ "$TASK" == uniwam_six_source_retrain_200k ]]; then
+  echo "The 2026-09-28 retrain task used different mobile windows and malformed camera-frame Rot6D; it is not the six-source parent reproduction." >&2
+  exit 2
+fi
+if [[ "$TASK" == uniwam_camera_frame_six_source_manip26_embodiment_stats_200k ]]; then
+  : "${UNIWAM_PARENT_RECOMPUTED_STATS:?Recompute Piper stats from the selected six-source data before launching the parent reproduction}"
+  python "$ROOT/scripts/preflight_parent_reproduction.py" \
+    --recomputed-stats "$UNIWAM_PARENT_RECOMPUTED_STATS"
+fi
 
 resume_args=()
 if [[ -n "${RESUME_STATE:-}" ]]; then

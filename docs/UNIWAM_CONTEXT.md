@@ -9,7 +9,9 @@ this release:
 2. **Manipulation-ready grounding.** The manipulation stream uses camera-frame
    end-effector action targets and auxiliary image-plane supervision. The
    six-source parent recipe retains the 20D robot action plus the 6D auxiliary
-   channel contract (`manip26`).
+   channel contract (`manip26`). Navigation currently uses `(dx, dy, dtheta)`;
+   the documented extension adds bbox `xyxy` and operating-point `xy` for a 9D
+   `3 + 4 + 2` navigation target.
 3. **Asynchronous execution.** The cloud policy and Piper edge client support
    prefix-conditioned action chunks, including prefix 0 and adaptive prefixes
    in the 6..12 range while the previous chunk is executed.

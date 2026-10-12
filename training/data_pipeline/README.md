@@ -1,27 +1,28 @@
 # Prepared-Data Pipeline
 
 This directory contains the reproducible processing stages from prepared
-LeRobot episode tables to the six-source model inputs. It does not embed raw
+LeRobot episode tables to UniWAM model inputs. The six-source recipe is one
+historical example; customer data may contain one or many datasets. It does not embed raw
 datasets, videos, VAE tensors, or text encoder caches.
 
 For a new Piper/AgileX customer task, use `prepare_customer_piper_views.py`
 and `prepare_customer_piper_h32.py`, then follow
-`docs/CUSTOMER_PIPER_FINETUNING.md`. The historical
-`prepare_agilex_camera_views.py` reproduces three older mobile sources but
-uses their historical Rot6D serialization; it must not be used for new
-customer training data.
+`docs/CUSTOMER_PIPER_FINETUNING.md`. `prepare_agilex_camera_views.py` now uses
+the same row-major rotation convention by default. Only the explicit
+`--legacy-retrain-rot6d` option reproduces the malformed 2026-09-28 tables.
 
 ## Stages
 
 1. Convert legacy state/action representations with the Rot6D and SE(2)
    converters when required by the source contract.
 2. Materialize camera-frame state/action columns and build H32 window tables.
-   For the completed renamed retrain, `prepare_agilex_camera_views.py` uses
-   `retrain_camera_extrinsics.json` for the three mobile sources.
+   Do not substitute the newer mobile sources for the pre-rename parent run.
 3. Route navigation/manipulation phase rows and preserve stable
    `(source_episode_index, start_frame)` keys.
 4. Build EEF-XY/visibility sidecars and validate their six-feature masks.
-5. Build per-embodiment q01/q99 statistics and the 818-entry prompt manifest.
+5. Build per-embodiment q01/q99 statistics and a prompt manifest for the
+   customer's task set. The historical six-source example has 818 prompt rows;
+   this is not a required dataset or prompt count.
 6. Generate or remap VAE latent rows and run the fail-closed validator before
    training.
 
@@ -30,7 +31,7 @@ The exact six-source parent indexes and latent row remaps are included under
 `training/scripts/bootstrap_reference_artifacts.sh` to restore them under
 `training/reference/`. The episode tables and latent tensors remain external.
 
-## Rebuild the renamed retrain sources
+## Prepare a new mobile data experiment
 
 Run each source into a new output directory. The converter refuses to replace
 an existing output and publishes the directory only after all episodes finish.
@@ -42,13 +43,13 @@ python3 training/data_pipeline/prepare_agilex_camera_views.py \
   --calibration training/data_pipeline/retrain_camera_extrinsics.json
 ```
 
-Repeat for moving white box and ordinary color blocks. This exact converter
-was checked against the training inputs: 534/534 cup-tray, 477/477 white-box,
-and 274/274 color-block episodes had equal camera-frame state/action columns.
-Use `compare_prepared_episode_tables.py` to check any independently rebuilt
-copy. The six-source `retrain` task uses the matching newer H32/phase indexes
-under `training/reference/retrain_indices/` and the moving-white-box remap
-under `training/reference/retrain_latent_remap/`.
+Repeat for moving white box and ordinary color blocks. Corrected output is
+validated against row-major Rot6D geometry. The completed 2026-09-28 run used
+the older, malformed conversion; adding `--legacy-retrain-rot6d` to the command
+above reproduces that run's three source tables, but must only be used for
+historical comparison. A new experiment needs its own matching H32/phase
+indexes, VAE latent cache, EEF sidecars, and recomputed embodiment statistics;
+do not reuse the parent's stats or call it a name-only reproduction.
 
 ## Manifest
 

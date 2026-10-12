@@ -25,7 +25,8 @@ training contract and are not prerequisites for customer data.
 ## Environment
 
 Use Python 3.10+, PyTorch, Hydra, PyArrow, NumPy, and the dependencies required by
-the training and deployment environments. Set all paths to local assets explicitly:
+the training and deployment environments. Before invoking a command, set all paths
+to local assets explicitly in the current shell:
 
 ```bash
 export UNIWAM_TRAINING_ROOT=/path/to/UniWAM/training
@@ -45,18 +46,52 @@ export DIFFSYNTH_MODEL_BASE_PATH=/path/to/Wan-and-ActionDiT-checkpoints
 export UNIWAM_PIPER_URDF=/path/to/piper_description.urdf
 ```
 
-The model contract is `proprio_dim=20`, `manip_action_dim=26`, `nav_action_dim=3`,
-H32 actions, 33 observation frames, Rot6D camera-frame poses, q01/q99
-normalization, and separate Franka and Piper/AgileX statistics. Source sampling
-weights are `[3, 1, 1, 1, 1, 7]`.
+These are shell environment inputs, not a script to run unchanged. Replace every
+placeholder with a path on the user's machine. The repository does not create a
+machine-specific environment file, silently discover datasets, or embed the paths
+above in a launcher. The launchers only consume variables that are already set;
+`UNIWAM_TRAINING_ROOT` may be derived from the checked-out `training` directory by
+the launcher, but data, latent, text-cache, model-weight, sidecar, and URDF paths
+must remain explicit.
 
-Two data recipes are intentionally separate. `uniwam_six_source_retrain_200k`
-matches the renamed training run completed in September 2026 and uses the
-full newer mobile sources. `uniwam_camera_frame_six_source_manip26_embodiment_stats_200k`
-keeps the earlier split-stats parent checkpoint's filtered mobile indexes.
-Their checkpoints and mobile data indexes must not be interchanged.
+The default model contract is `proprio_dim=20`, `manip_action_dim=26`, and
+`nav_action_dim=3`: 20 robot manipulation values plus six optional tracking
+values, and three navigation values `(dx, dy, dtheta)`. The planned navigation
+extension is `3 + 4 + 2 = 9` values; see [Action Slots and Feature Masks](docs/ACTION_SLOTS.md).
+Actions use H32 horizons and 33 observation frames, with Rot6D camera-frame poses,
+q01/q99 normalization, and separate Franka and Piper/AgileX statistics.
+
+The historical six-source recipe is an example of a multi-dataset experiment. Its
+source weights are `[3, 1, 1, 1, 1, 7]`, but customer fine-tuning may use a different
+number of datasets, a single dataset, and different sampling weights. The names
+`agilex7000_camera_frame` and the other historical source paths refer to our
+example data and are not required or distributed for customer use.
+
+For a faithful reproduction of the pre-rename six-source 200k run, use
+`uniwam_camera_frame_six_source_manip26_embodiment_stats_200k`. It keeps the
+parent's source membership, filtered mobile windows, latent remaps, and
+Franka/Piper split statistics. The older mobile LeRobot datasets are external;
+the newer `action_current_v1_camera_frame` datasets are **not** substitutes.
+The launcher checks the parent dataset names, frame counts, index hashes, and
+stats hashes before training. It also requires `UNIWAM_PARENT_RECOMPUTED_STATS`
+to point to Piper stats rebuilt from the selected episodes and old indexes;
+their state/action/contract values must match the parent exactly. This catches
+prepared datasets with the right names and frame counts but different camera
+poses. Episode contents still cannot be proven byte-identical without the
+original episode files.
+
+`uniwam_six_source_retrain_200k` is retained only to inspect the completed
+2026-09-28 checkpoint. That run used different mobile windows, reused the
+parent statistics, and its three newly converted mobile sources have a
+row/column Rot6D serialization error. It is not a name-only reproduction and
+is blocked by the two-node launcher.
 
 ## Data Pipeline
+
+The pipeline is parameterized by the customer's own LeRobot sources. The six-source
+paths and counts in the reference recipe are provenance examples, not requirements.
+For a new task, replace them with the customer's camera-frame dataset, indexes,
+sidecars, latent cache, and exact prompt cache, then validate the resulting contract.
 
 Start with camera-frame LeRobot episode tables and external EEF sidecars. Build or
 restore H32 and phase indexes, latent row remaps, split stats, and prompt caches.
@@ -67,12 +102,10 @@ Run `bash training/scripts/bootstrap_reference_artifacts.sh` once after cloning;
 it restores the exact parent and retrain index/remap files and checks all 34
 file hashes before training.
 
-For the completed `retrain` recipe, the three mobile camera-frame datasets can
-be rebuilt from the action-current LeRobot sources with
-`training/data_pipeline/prepare_agilex_camera_views.py` and the shipped
-`retrain_camera_extrinsics.json`. All 1,285 mobile episode state/action tables
-were independently rebuilt and compared to the completed training run with
-strict Arrow equality. See `training/data_pipeline/README.md` for commands.
+The mobile conversion script now writes correct row-major Rot6D by default.
+Its `--legacy-retrain-rot6d` flag reproduces the malformed 2026-09-28 tables
+for auditing only; it must not be used to prepare new training data. See
+`training/data_pipeline/README.md` for the distinction.
 
 ```bash
 python training/data_pipeline/validate_six_source_prepared_data.py \
@@ -95,14 +128,15 @@ cd training
 export PYTHONPATH="$PWD/src:$PWD"
 export UNIWAM_TRAINING_ROOT="$PWD"
 python scripts/train.py --cfg job --config-name train \
-  task=uniwam_six_source_retrain_200k
+  task=uniwam_camera_frame_six_source_manip26_embodiment_stats_200k
 ```
 
 For two hosts with eight GPUs per host, set `NODE_RANK`, `MASTER_ADDR`,
 `MASTER_PORT`, and `DIFFSYNTH_MODEL_BASE_PATH`, then run
 `training/scripts/launch_uniwam_embodiment_stats_2n16.sh`. It defaults to the
-renamed `retrain` recipe; set `TASK=uniwam_camera_frame_six_source_manip26_embodiment_stats_200k`
-only with that earlier parent's prepared data. The launcher uses
+parent reproduction recipe and refuses the historical malformed retrain task.
+Run the reference-artifact bootstrap once and reproduce the Piper stats before
+launching both hosts. The launcher uses
 ZeRO-1, bf16, per-GPU batch size 32, compile-enabled denoising/action/VAE
 inference, and disables W&B unless explicitly enabled.
 

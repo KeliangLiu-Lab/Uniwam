@@ -1,4 +1,7 @@
 # @package _global_
+# Historical 2026-09-28 checkpoint provenance only. This used different mobile
+# windows, retained parent stats, and malformed camera-frame Rot6D labels.
+# Do not use this task for a faithful six-source parent reproduction.
 defaults:
   - override /data: uniwam_six_source_retrain_200k
   - override /model: uniwam_camera_frame_six_source_manip26
