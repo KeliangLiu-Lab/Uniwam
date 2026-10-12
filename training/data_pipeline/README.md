@@ -67,6 +67,5 @@ The default navigation output is 3D. A 9D navigation extension appends a 4D
 target bbox and 2D operating point; it requires a matching sidecar, mask,
 model head, and decoder. See `docs/ACTION_SLOTS.md` for slot order and masking.
 
-The repository also includes specialized scripts and reference artifacts for
-particular experiments. Those are examples of data contracts, not prerequisites
-for the customer data path above.
+The customer path above is self-contained once the customer's own data,
+calibration, model weights, and caches are available.
