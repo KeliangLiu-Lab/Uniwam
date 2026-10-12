@@ -49,9 +49,10 @@ The intended extended navigation contract is 9-dimensional, written as
 
 The six auxiliary values use normalized camera-image coordinates. Their order,
 alignment, and coordinate frame must be recorded in the sidecar manifest. The
-current public checkpoint keeps `nav_action_dim: 3`; the navigation sidecar and
-3-to-9 feature adapter are provided for an extension, but a 9D head is not
-enabled by changing only one value in a config file.
+current public checkpoint and default dataset keep `nav_action_dim: 3`. A full
+9D extension requires the sidecar reader, dataset output shape, collator,
+ActionDiT head, normalization contract, cloud decoder, and tests to be updated
+together; changing one config value is insufficient.
 
 ## Extending the slots
 
@@ -93,6 +94,5 @@ head without a new training contract.
   `disable_manip_aux_training=true` (or `lambda_manip_aux_action=0`).
   Do not set a false mask to true merely to make tensor shapes match.
 
-The implementation points are `_EefImageActionIndex`, `_NavAuxActionIndex`,
-`DualExpertRobotVideoDataset`, `MixedStreamCollator`, and the masked action-loss
-path in `training/src/uniwam/models/wan22/fastwam_mixed_stream.py`.
+The implementation is split between the sidecar readers, the dataset/collator,
+and the masked action-loss path under `training/src/uniwam`.

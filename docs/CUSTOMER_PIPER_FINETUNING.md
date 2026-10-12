@@ -1,13 +1,14 @@
-# Fine-tune UniWAM on a Piper/AgileX task
+# Fine-tune UniWAM on a customer task
 
 For the complete slot order and masking contract, read
 [Action Slots and Feature Masks](ACTION_SLOTS.md) before changing dimensions.
 
-This path adapts the six-source 20D-state/26D-action checkpoint to a **single
-Piper/AgileX manipulation dataset**. The customer supplies their own task text,
-videos, robot calibration, and LeRobot episodes. It does not require any of the
-original six datasets. It is not a generic adapter for other robot kinematics,
-camera layouts, or action units.
+This path adapts a compatible 20D-state/26D-action UniWAM checkpoint to a
+customer-owned manipulation dataset. The customer supplies task text, videos,
+robot calibration, and LeRobot episodes. The supplied conversion and robot
+client target the camera-frame dual-arm contract documented below; a different
+robot kinematic or camera contract requires a corresponding data/configuration
+extension.
 
 ## Supported input contract
 
@@ -27,14 +28,20 @@ The `task` field in `tasks.jsonl` is the customer's task sentence. Keep the
 source dataset and its video directory available after conversion; the
 camera-frame dataset links to those videos.
 
+Here `424x240` is the source frame size (`W=424`, `H=240`). The loader creates
+the model camera canvas at `384x320` (`W=384`, `H=320`) after mosaic assembly and
+resize/pad. Auxiliary image coordinates must use the coordinate frame declared
+by their sidecar; the supplied EEF sidecar uses the final `384x320` canvas.
+
 The Piper ROS client may transmit a 23D observation packet containing base 3D
 plus arm 20D for navigation/transport compatibility. The cloud takes its
 last 20 values as model proprioception; this does not make 23D a training
 state requirement.
 
-The Piper/AgileX q01/q99 stats shipped in `training/data_indices` are reused
-for both fine-tuning and deployment. Do not substitute the unified or Franka
-stats. The parent manipulation action head is 26D: the first 20 positions are
+Use normalization statistics that match the robot embodiment, state/action
+units, and checkpoint. Keep the same statistics for fine-tuning and deployment;
+do not substitute statistics from another embodiment or representation. The
+manipulation action head is 26D: the first 20 positions are
 dual-arm control, and positions 20-25 are six point-tracking auxiliary values.
 The current navigation head is 3D `(dx, dy, dtheta)`; an optional 9D navigation
 extension is `3 + 4 + 2`, adding target bbox `xyxy` and operating-point `xy`. A
@@ -59,25 +66,14 @@ An FFmpeg executable is required for episode video decoding.
 export REPO=/absolute/path/to/UniWAM
 python -m pip install -r "$REPO/training/requirements-training.txt"
 python -m pip install -r "$REPO/deployment/requirements-cloud.txt"
+source "$REPO/scripts/activate_customer_env.sh"
 ```
 
-The Wan/ActionDiT weights, a complete 12 GB+ six-source **split-stats**
-checkpoint with its adjacent `config.yaml`, and a Piper URDF are external
-assets. They are not licensed or distributed by this source repository.
+The Wan/ActionDiT weights, an initialization checkpoint with its adjacent
+`config.yaml`, and the robot description are external assets. They are not
+licensed or distributed by this source repository.
 
-```bash
-export REPO=/absolute/path/to/UniWAM
-export UNIWAM_TRAINING_ROOT="$REPO/training"
-export DIFFSYNTH_MODEL_BASE_PATH=/absolute/path/to/Wan-and-ActionDiT-weights
-export UNIWAM_PARENT_CHECKPOINT=/absolute/path/to/parent-run/checkpoints/weights/step_200000.pt
-export UNIWAM_TEXT_CACHE_DIR=/absolute/path/to/customer-text-cache
-export UNIWAM_CUSTOM_SOURCE_NAME=customer_piper_task
-export UNIWAM_CUSTOM_DATA=/absolute/path/to/customer_piper_task
-export UNIWAM_CUSTOM_WINDOW_INDEX=/absolute/path/to/customer_piper_task_h32.parquet
-export UNIWAM_CUSTOM_LATENT_ROOT=/absolute/path/to/customer-vae-cache
-export PYTHONPATH="$UNIWAM_TRAINING_ROOT/src:$UNIWAM_TRAINING_ROOT"
-```
-
+Edit the customer paths in `scripts/activate_customer_env.sh`, then source it.
 For newly generated latent caches, `UNIWAM_CUSTOM_SOURCE_NAME` must equal the
 final camera-frame dataset directory name. For an existing cache, set it to
 the directory name inside `UNIWAM_CUSTOM_LATENT_ROOT`. All paths must be
@@ -112,9 +108,9 @@ Neither option changes the 20D model input.
 The second command checks the base-to-camera transform for base-frame input,
 or exact value preservation for declared camera-frame input, plus Rot6D
 geometry, gripper units, and H32 boundaries. It refuses to overwrite
-an existing index. The historical `prepare_agilex_camera_views.py` remains
-only for byte-equivalent reconstruction of the older six-source mobile data;
-do not use it for a new customer dataset.
+an existing index. Use `prepare_agilex_camera_views.py` only when a dataset
+explicitly follows its documented input contract; it is not a replacement for
+the customer conversion command above.
 
 Encode the customer's exact task sentences and the 33-frame visual windows:
 
@@ -129,8 +125,9 @@ python scripts/preflight_customer_piper.py
 ```
 
 Raise `NPROC_PER_NODE` only to the number of visible GPUs. The preflight
-loads a real sample and verifies the parent identity, stats hash, latent/text
-caches, 26D action shape, and zero mask on all six auxiliary features. It must
+loads a real sample and verifies the checkpoint dimensions, normalization path,
+latent/text caches, 26D action shape, and zero mask on all six auxiliary
+features. It must
 print `CUSTOMER_SFT_INPUTS_OK` before training.
 
 ## Fine-tune
@@ -140,7 +137,7 @@ cd "$UNIWAM_TRAINING_ROOT"
 bash scripts/train_zero1.sh 1 task=uniwam_customer_piper_manip_sft
 ```
 
-The template loads **weights only** from `UNIWAM_PARENT_CHECKPOINT`, starts a
+The template loads **weights only** from `UNIWAM_INITIALIZATION_CHECKPOINT`, starts a
 fresh optimizer at step 0, uses a fresh learning-rate schedule, and defaults
 to 20,000 steps with one checkpoint every 2,000 steps. Its per-GPU batch size
 is 16. Increase the first launcher argument for more GPUs on one host. Check
@@ -149,7 +146,7 @@ result; a successful Hydra compose or data preflight is not a training run.
 
 ## Cloud and Piper edge
 
-Use the fine-tuned checkpoint, **not** the parent checkpoint, with the
+Use the fine-tuned checkpoint, **not** the initialization checkpoint, with the
 customer task/source contract. Keep the training root and its customer data
 paths accessible to the cloud process because the saved checkpoint config
 contains those paths. The cloud service validates the checkpoint config,
@@ -157,22 +154,23 @@ Piper stats, camera mosaic, action representation, and prompt prefix before
 listening.
 
 ```bash
-export UNIWAM_CLOUD_TASK=uniwam_customer_piper_manip_sft
-export UNIWAM_CLOUD_SOURCE_INDEX=0
-export UNIWAM_CLOUD_AUX_WEIGHT=0.0
 export UNIWAM_PIPER_URDF=/absolute/path/to/piper_description.urdf
 export CHECKPOINT=/absolute/path/to/sft-run/checkpoints/weights/step_020000.pt
 export TASK_PROMPT='Your exact task sentence from meta/tasks.jsonl'
 
-CONFIG="$REPO/deployment/configs/uniwam_cloud_parent_async.yaml" \
+export UNIWAM_CLOUD_TASK=uniwam_customer_piper_manip_sft
+export UNIWAM_CLOUD_SOURCE_INDEX=0
+export UNIWAM_CLOUD_AUX_WEIGHT=0.0
+
+CONFIG="$REPO/deployment/configs/uniwam_cloud_customer_async.yaml" \
 bash "$REPO/deployment/scripts/precompute_inference_prompt_async_prefix12_rot6d.sh"
 
 PYTHONPATH="$REPO/deployment/cloud:$REPO/deployment/common:$UNIWAM_TRAINING_ROOT/src" \
 python "$REPO/deployment/scripts/preflight_cloud_contract.py" \
-  --config "$REPO/deployment/configs/uniwam_cloud_parent_async.yaml" \
+  --config "$REPO/deployment/configs/uniwam_cloud_customer_async.yaml" \
   --checkpoint "$CHECKPOINT"
 
-CONFIG="$REPO/deployment/configs/uniwam_cloud_parent_async.yaml" \
+CONFIG="$REPO/deployment/configs/uniwam_cloud_customer_async.yaml" \
 bash "$REPO/deployment/scripts/launch_uniwam_cloud_server.sh"
 ```
 
@@ -192,10 +190,10 @@ bash "$REPO/deployment/scripts/launch_uniwam_piper_client.sh" \
   task_prompt="$TASK_PROMPT" control.dry_run=true base.dry_run=true
 ```
 
-The environment blocks above are intended to be pasted into the user's current
-shell after replacing every placeholder. Do not put the example paths into a
-repository launcher or expect a launcher to infer them. A customer's data may be
-one dataset or many; the original multi-source ratios are historical examples only.
+Activate the environment through `scripts/activate_customer_env.sh` after
+replacing every placeholder. A customer may use one dataset or many; define the
+corresponding dataset entries and sampling weights in the Hydra data
+configuration.
 
 If cloud and edge are on different machines, establish an authenticated SSH
 forward for the cloud listen port and set `server_port` to the chosen local

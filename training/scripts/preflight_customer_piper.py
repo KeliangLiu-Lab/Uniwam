@@ -29,26 +29,26 @@ def sha256(path: Path) -> str:
 
 def check_parent(checkpoint: Path) -> None:
     if checkpoint.parent.name != "weights" or checkpoint.parent.parent.name != "checkpoints":
-        raise ValueError("Parent checkpoint must be under RUN/checkpoints/weights/")
-    if not checkpoint.is_file() or checkpoint.stat().st_size < 12_000_000_000:
-        raise ValueError("A complete 12 GB+ six-source parent checkpoint is required")
+        raise ValueError("Initialization checkpoint must be under RUN/checkpoints/weights/")
+    if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
+        raise ValueError("Initialization checkpoint is missing or empty")
     train_config = checkpoint.parents[2] / "config.yaml"
+    if not train_config.is_file():
+        raise FileNotFoundError(f"Missing checkpoint config: {train_config}")
     parent = OmegaConf.load(train_config)
     model = parent.model
     if int(model.proprio_dim) != 20 or int(model.action_dit_config.manip_action_dim) != 26:
-        raise ValueError("Parent checkpoint is not the 20D/26D UniWAM model")
+        raise ValueError("Initialization checkpoint is not a 20D/26D UniWAM model")
     datasets = parent.data.train.datasets
-    if len(datasets) != 6:
-        raise ValueError("Expected the six-source split-stats parent checkpoint")
-    names = [Path(str(item.dataset.pretrained_norm_stats)).name for item in datasets]
-    if names[0] != "camera_frame_franka_only_q01q99.json" or names[1:] != [
-        "camera_frame_piper_agx_only_q01q99.json"
-    ] * 5:
-        raise ValueError(f"Parent is not embodiment-split-stats: {names}")
-    reference = json.loads((ROOT / "data_pipeline/parent_200k_artifact_reference.json").read_text())
-    stats = ROOT / "data_indices/camera_frame_piper_agx_only_q01q99.json"
-    if sha256(stats) != reference["stats_sha256"]["piper_agx"]:
-        raise ValueError("Bundled Piper stats differ from the six-source parent reference")
+    if not datasets:
+        raise ValueError("Initialization checkpoint contains no training dataset contract")
+    stats_paths = [
+        Path(str(item.dataset.pretrained_norm_stats))
+        for item in datasets
+        if item.get("dataset", {}).get("pretrained_norm_stats") is not None
+    ]
+    if not stats_paths or any(not path.is_file() for path in stats_paths):
+        raise ValueError("Initialization checkpoint refers to unavailable normalization statistics")
 
 
 def main() -> None:

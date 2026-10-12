@@ -1,29 +1,19 @@
-# UniWAM Code Context
+# UniWAM Architecture Overview
 
-The accompanying UniWAM paper describes three ideas that are represented by
-this release:
+UniWAM combines camera-frame manipulation and mobile navigation in a shared
+video/action model. The public interfaces are organized around three ideas:
 
-1. **Mixed-stream modeling.** Navigation and manipulation rows are sampled
-   independently, packed along the batch dimension, and routed through separate
-   visual/action interfaces while sharing the video/action backbone.
-2. **Manipulation-ready grounding.** The manipulation stream uses camera-frame
-   end-effector action targets and auxiliary image-plane supervision. The
-   six-source parent recipe retains the 20D robot action plus the 6D auxiliary
-   channel contract (`manip26`). Navigation currently uses `(dx, dy, dtheta)`;
-   the documented extension adds bbox `xyxy` and operating-point `xy` for a 9D
-   `3 + 4 + 2` navigation target.
-3. **Asynchronous execution.** The cloud policy and Piper edge client support
-   prefix-conditioned action chunks, including prefix 0 and adaptive prefixes
-   in the 6..12 range while the previous chunk is executed.
+1. **Mixed streams.** Manipulation and navigation samples are packed and routed
+   through their respective visual and action interfaces while sharing the
+   backbone.
+2. **Camera-frame action targets.** Dual-arm end-effector state and action use
+   a fixed camera frame, row-major Rot6D, and explicit embodiment-matched
+   normalization. Optional image-plane labels are carried by feature masks.
+3. **Asynchronous execution.** The cloud policy returns action chunks while
+   the robot client executes the previous chunk, with configurable prefix and
+   replanning behavior.
 
-The 200k run represented here is the real-robot camera-frame parent model. MAP
-dataset generation and MAP benchmark construction described in the paper are
-not included in this focused release; the relevant shared-stream and
-camera-frame interfaces are included so the parent policy can be reproduced
-and deployed.
-
-The canonical Python import namespace is `uniwam`. A thin `fastwam` package
-forwards the old import path to it, preserving compatibility with existing
-Wan/FastWAM checkpoints and Hydra configurations. Deployment uses
-`uniwam_piper_cloud`, `uniwam_piper_common`, and `uniwam_piper_robot`, with
-the corresponding `fastwam_piper_*` wrappers retained for old launchers.
+The repository is intended to be adapted to customer-owned tasks and datasets.
+The data pipeline requires the customer to provide calibration, episode tables,
+task prompts, latent caches, and statistics that match the selected embodiment
+and action representation.
