@@ -27,13 +27,14 @@ import PIL.Image
 import torch
 import torch.utils
 import pyarrow.parquet as pq
-from datasets import concatenate_datasets, load_dataset
+from datasets import concatenate_datasets
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.constants import REPOCARD_NAME
 from huggingface_hub.errors import RevisionNotFoundError
 
 # adapte to own path
 from ..constants import HF_LEROBOT_HOME
+from .parquet_cache import load_parquet_dataset
 from .datasets.compute_stats import aggregate_stats, compute_episode_stats
 from .datasets.utils import (
     DEFAULT_FEATURES,
@@ -505,12 +506,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
 
-        # Check timestamps
-        timestamps = _stack_dataset_column(self.hf_dataset["timestamp"]).numpy()
-        episode_indices = _stack_dataset_column(self.hf_dataset["episode_index"]).numpy()
-        ep_data_index_np = {k: t.numpy() for k, t in self.episode_data_index.items()}
-        # check_timestamps_sync(timestamps, episode_indices, ep_data_index_np, self.fps, self.tolerance_s)
-
         # Setup delta_indices
         if self.delta_timestamps is not None:
             # check_delta_timestamps(self.delta_timestamps, self.fps, self.tolerance_s)
@@ -618,10 +613,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
         if self.episodes is None:
             path = str(self.root / "data")
-            hf_dataset = load_dataset("parquet", data_dir=path, split="train")
+            hf_dataset = load_parquet_dataset(data_dir=path)
         else:
             files = [str(self.root / self.meta.get_data_file_path(ep_idx)) for ep_idx in self.episodes]
-            hf_dataset = load_dataset("parquet", data_files=files, split="train")
+            hf_dataset = load_parquet_dataset(data_files=files)
 
         # TODO(aliberts): hf_dataset.set_format("torch")
         hf_dataset.set_transform(hf_transform_to_torch)
